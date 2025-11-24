@@ -13,14 +13,14 @@ class ProviderSearchEngine:
         self.index_dir = index_dir
         self.searcher = lucene.LuceneSearcher(index_dir)
 
-    def bm25_search(self, query: str, k: int = 10, k1: float = 0.9, b: float = 0.4):
+    def bm25_search(self, query: str, k: int = 100, k1: float = 0.9, b: float = 0.4):
         """Perform BM25 search using pyserini."""
         self.searcher.set_bm25(k1=k1, b=b)
         hits = self.searcher.search(query, k)
         return [{"provider_id": hit.docid, "score": hit.score} for hit in hits]
 
-    def ql_search(self, query: str, k: int = 10, mu: float = 1000.0):
-        """Perform query likelihood search."""
+    def ql_dirichlet_search(self, query: str, k: int = 100, mu: float = 1000.0):
+        """Perform Query Likelihood search with Dirichlet smoothing."""
         self.searcher.set_qld(mu)
         hits = self.searcher.search(query, k)
         return [{"provider_id": hit.docid, "score": hit.score} for hit in hits]
@@ -135,13 +135,51 @@ def get_full_documents(provider_ids: list, jsonl_path: str):
     return documents
 
 
+def write_results_json(results: list, query: str, method: str, output_path: str):
+    """Write retrieval results to JSON file."""
+    output_data = {
+        "query": query,
+        "method": method,
+        "num_results": len(results),
+        "results": [
+            {
+                "rank": i + 1,
+                "provider_id": result["provider_id"],
+                "score": result["score"]
+            }
+            for i, result in enumerate(results)
+        ]
+    }
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(output_data, f, indent=2, ensure_ascii=False)
+    
+    print(f"\n✓ Results written to {output_path}")
+    print(f"  Method: {method}, Results: {len(results)}")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        query = " ".join(sys.argv[1:])  
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Provider Search - Baseline Retrieval')
+    parser.add_argument('query', nargs='*', help='Search query')
+    parser.add_argument('--method', choices=['bm25', 'ql_dirichlet'], default='bm25',
+                       help='Retrieval method (default: bm25)')
+    parser.add_argument('--k', type=int, default=100,
+                       help='Number of results to retrieve (default: 100)')
+    
+    args = parser.parse_args()
+    
+    if args.query:
+        query = " ".join(args.query)
+        method = args.method
+        k = args.k
         
         script_dir = Path(__file__).parent
-        default_index_dir = script_dir.parent / "indexes" / "provider_index"
+        repo_root = script_dir.parent
+        default_index_dir = repo_root / "indexes" / "provider_index"
         index_dir = os.environ.get("PROVIDER_INDEX_DIR", str(default_index_dir))
+        output_path = repo_root / "output.json"
         
         try:
             ensure_index_exists(index_dir)
@@ -149,16 +187,29 @@ if __name__ == "__main__":
             engine = ProviderSearchEngine(index_dir)
             
             print(f"Searching for: '{query}'")
+            print(f"Method: {method.upper()}, Retrieving top {k} results")
             print("=" * 50)
-            results = engine.bm25_search(query, k=5)
+            
+            # Perform retrieval
+            if method == 'bm25':
+                results = engine.bm25_search(query, k=k)
+            elif method == 'ql_dirichlet':
+                results = engine.ql_dirichlet_search(query, k=k)
+            else:
+                raise ValueError(f"Unknown method: {method}")
             
             if results:
+                # Write full results to JSON
+                write_results_json(results, query, method, str(output_path))
+                
+                # Display top 5 in console
                 script_dir = Path(__file__).parent
                 jsonl_path = script_dir.parent / "data" / "providers_illinois.jsonl"
-                full_docs = get_full_documents([r['provider_id'] for r in results], str(jsonl_path))
+                top_5_results = results[:5]
+                full_docs = get_full_documents([r['provider_id'] for r in top_5_results], str(jsonl_path))
                 
-                print(f"Top {len(results)} results:\n")
-                for i, result in enumerate(results, 1):
+                print(f"\nTop 5 results (showing {len(top_5_results)} of {len(results)}):\n")
+                for i, result in enumerate(top_5_results, 1):
                     provider_id = result['provider_id']
                     doc = full_docs.get(provider_id, {})
                     
@@ -169,6 +220,8 @@ if __name__ == "__main__":
                     print()
             else:
                 print("No results found.")
+                # Still write empty results to JSON
+                write_results_json([], query, method, str(output_path))
             
         except ImportError as e:
             print(f"Error: {e}")
@@ -182,9 +235,19 @@ if __name__ == "__main__":
             sys.exit(1)
     else:
         print("=" * 50)
-        print("Provider Search - BM25 Retrieval")
+        print("Provider Search - Baseline Retrieval")
         print("=" * 50)
-        print("\nUsage: python baseline_retrieval.py '<search query>'")
-        print("Example: python baseline_retrieval.py 'cardiologist in Chicago'")
+        print("\nUsage: python baseline_retrieval.py '<search query>' [--method METHOD] [--k K]")
+        print("\nExamples:")
+        print("  python baseline_retrieval.py 'cardiologist in Chicago'")
+        print("  python baseline_retrieval.py 'cardiologist in Chicago' --method ql_dirichlet")
+        print("  python baseline_retrieval.py 'pediatrician' --method bm25 --k 50")
+        print("\nMethods:")
+        print("  bm25        - BM25 retrieval (default)")
+        print("  ql_dirichlet - Query Likelihood with Dirichlet smoothing")
+        print("\nOptions:")
+        print("  --k K       - Number of results to retrieve (default: 100)")
+        print("\nResults are written to output.json in the repository root.")
+        print("Top 5 results are displayed in the console.")
         print("\nThe index will be built automatically on first run if it doesn't exist.")
         print("=" * 50)
