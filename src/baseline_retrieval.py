@@ -1,91 +1,190 @@
 # baseline_retrieval.py
 
-# Import pyserini at module level - will fail gracefully if not available
-try:
-    from pyserini.search import lucene  # type: ignore
-    _PYSERINI_AVAILABLE = True
-except ImportError:
-    _PYSERINI_AVAILABLE = False
-    class _DummyModule:
-        class LuceneSearcher:
-            def __init__(self, *args, **kwargs):
-                raise ImportError("pyserini is not installed. Install it with: pip install pyserini")
-            def set_bm25(self, *args, **kwargs):
-                pass
-            def set_qld(self, *args, **kwargs):
-                pass
-            def search(self, *args, **kwargs):
-                return []
-    lucene = _DummyModule()
+from pyserini.search import lucene
+from pyserini.index.lucene import LuceneIndexer
+import json
+import os
+import sys
+from pathlib import Path
 
 
 class ProviderSearchEngine:
     def __init__(self, index_dir: str):
-        if not _PYSERINI_AVAILABLE:
-            raise ImportError("pyserini is not installed. Install it with: pip install pyserini")
+        self.index_dir = index_dir
         self.searcher = lucene.LuceneSearcher(index_dir)
 
     def bm25_search(self, query: str, k: int = 10, k1: float = 0.9, b: float = 0.4):
+        """Perform BM25 search using pyserini."""
         self.searcher.set_bm25(k1=k1, b=b)
         hits = self.searcher.search(query, k)
         return [{"provider_id": hit.docid, "score": hit.score} for hit in hits]
 
     def ql_search(self, query: str, k: int = 10, mu: float = 1000.0):
+        """Perform query likelihood search."""
         self.searcher.set_qld(mu)
         hits = self.searcher.search(query, k)
         return [{"provider_id": hit.docid, "score": hit.score} for hit in hits]
 
-#testing stuff 
+
+def build_index_from_jsonl(jsonl_path: str, index_dir: str):
+    """Build a pyserini index from a JSONL file."""
+    print(f"Building index from {jsonl_path}...")
+    print("This may take a few minutes for large datasets...")
+    
+    os.makedirs(index_dir, exist_ok=True)
+    
+    indexer = LuceneIndexer(index_dir, threads=4)
+    
+    doc_count = 0
+    batch = []
+    batch_size = 1000
+    
+    with open(jsonl_path, 'r', encoding='utf-8') as f:
+        for line_num, line in enumerate(f, 1):
+            if line_num % 10000 == 0:
+                print(f"  Processed {line_num:,} documents...")
+            
+            try:
+                doc = json.loads(line.strip())
+                
+                doc_id = str(doc.get('NPI', f'doc_{line_num}'))
+                
+                if 'search_text' in doc and doc['search_text']:
+                    contents = doc['search_text']
+                else:
+                    parts = []
+                    if doc.get('provider_name'):
+                        parts.append(doc['provider_name'])
+                    if doc.get('specialty_readable'):
+                        parts.append(doc['specialty_readable'])
+                    if doc.get('Provider Business Practice Location Address City Name'):
+                        parts.append(doc['Provider Business Practice Location Address City Name'])
+                    if doc.get('Provider Business Practice Location Address State Name'):
+                        parts.append(doc['Provider Business Practice Location Address State Name'])
+                    contents = ' | '.join(parts)
+                
+                pyserini_doc = {
+                    "id": doc_id,
+                    "contents": contents
+                }
+                
+                batch.append(pyserini_doc)
+                doc_count += 1
+                
+                if len(batch) >= batch_size:
+                    indexer.add_batch_dict(batch)
+                    batch = []
+                
+            except json.JSONDecodeError as e:
+                print(f"Warning: Skipping invalid JSON on line {line_num}: {e}")
+                continue
+            except Exception as e:
+                print(f"Warning: Error processing line {line_num}: {e}")
+                continue
+    
+    if batch:
+        indexer.add_batch_dict(batch)
+    
+    indexer.close()
+    print(f"✓ Index built successfully! Indexed {doc_count:,} documents.")
+    print(f"  Index location: {index_dir}")
+
+
+def ensure_index_exists(index_dir: str, data_dir: str = None):
+    """Check if index exists, build it if it doesn't."""
+    if os.path.exists(index_dir) and os.path.isdir(index_dir):
+        index_files = list(Path(index_dir).glob('*'))
+        if index_files:
+            return True
+    
+    if data_dir is None:
+        script_dir = Path(__file__).parent.parent
+        data_dir = script_dir / "data"
+    
+    jsonl_path = os.path.join(data_dir, "providers_illinois.jsonl")
+    
+    if not os.path.exists(jsonl_path):
+        raise FileNotFoundError(
+            f"Index not found at {index_dir} and data file not found at {jsonl_path}.\n"
+            f"Please ensure the data file exists or the index is already built."
+        )
+    
+    print(f"Index not found. Building index from {jsonl_path}...")
+    build_index_from_jsonl(jsonl_path, index_dir)
+    return True
+
+
+def get_full_documents(provider_ids: list, jsonl_path: str):
+    """Retrieve full document data for given provider IDs from JSONL file."""
+    provider_ids_set = set(str(pid) for pid in provider_ids)
+    documents = {}
+    
+    with open(jsonl_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            try:
+                doc = json.loads(line.strip())
+                npi = str(doc.get('NPI', ''))
+                if npi in provider_ids_set:
+                    documents[npi] = doc
+                    # Stop early if we found all documents
+                    if len(documents) == len(provider_ids_set):
+                        break
+            except json.JSONDecodeError:
+                continue
+    
+    return documents
+
+
 if __name__ == "__main__":
-    import sys
-    import os
-    
-    print("=" * 50)
-    print("Testing baseline_retrieval.py setup")
-    print("=" * 50)
-    
-    # Show Python environment info
-    print(f"Python executable: {sys.executable}")
-    print(f"Python version: {sys.version.split()[0]}")
-    print(f"Working directory: {os.getcwd()}")
-    print()
-    
-    # Test 1: Module loads (this print confirms the file is executing)
-    print("✓ Module loaded successfully")
-    
-    # Test 2: Imports work
-    try:
-        from pyserini.search import lucene  # type: ignore
-        print("✓ Imports work correctly (pyserini is available)")
-    except ImportError as e:
-        print(f"✗ Import failed: {e}")
-        print("\nTo fix this, install pyserini:")
-        print(f"  {sys.executable} -m pip install pyserini")
-        print("\nOr if using conda:")
-        print("  conda install -c conda-forge pyserini")
-        sys.exit(1)
-    
-    # Test 3: Class exists
-    try:
-        assert ProviderSearchEngine is not None
-        assert hasattr(ProviderSearchEngine, 'bm25_search')
-        assert hasattr(ProviderSearchEngine, 'ql_search')
-        print("✓ ProviderSearchEngine class exists with required methods")
-    except AssertionError as e:
-        print("✗ Class structure invalid:", e)
-        exit(1)
-    
-    # Test 4: File structure is valid (Python syntax)
-    print("✓ File structure is valid (Python parsed successfully)")
-    
-    # Test 5: Running doesn't crash Python
-    try:
-        engine = ProviderSearchEngine("indexes/provider_index")
-        print("✓ Engine instantiated successfully")
-        print("✓ All tests passed! Setup is working.")
-    except Exception as e:
-        print("⚠ Engine could not initialize — this is expected until the index exists.")
-        print(f"  (Error: {type(e).__name__})")
-        print("✓ Python didn't crash — file structure is valid!")
-    
-    print("=" * 50)
+    if len(sys.argv) > 1:
+        query = " ".join(sys.argv[1:])  
+        
+        script_dir = Path(__file__).parent
+        default_index_dir = script_dir.parent / "indexes" / "provider_index"
+        index_dir = os.environ.get("PROVIDER_INDEX_DIR", str(default_index_dir))
+        
+        try:
+            ensure_index_exists(index_dir)
+            
+            engine = ProviderSearchEngine(index_dir)
+            
+            print(f"Searching for: '{query}'")
+            print("=" * 50)
+            results = engine.bm25_search(query, k=5)
+            
+            if results:
+                script_dir = Path(__file__).parent
+                jsonl_path = script_dir.parent / "data" / "providers_illinois.jsonl"
+                full_docs = get_full_documents([r['provider_id'] for r in results], str(jsonl_path))
+                
+                print(f"Top {len(results)} results:\n")
+                for i, result in enumerate(results, 1):
+                    provider_id = result['provider_id']
+                    doc = full_docs.get(provider_id, {})
+                    
+                    print(f"{i}. Provider ID: {provider_id}, Score: {result['score']:.4f}")
+                    if doc:
+                        search_text = doc.get('search_text', 'N/A')
+                        print(f"   Search Text: {search_text}")
+                    print()
+            else:
+                print("No results found.")
+            
+        except ImportError as e:
+            print(f"Error: {e}")
+            print("\nTo fix this, install pyserini:")
+            print(f"  {sys.executable} -m pip install pyserini")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error during search: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+    else:
+        print("=" * 50)
+        print("Provider Search - BM25 Retrieval")
+        print("=" * 50)
+        print("\nUsage: python baseline_retrieval.py '<search query>'")
+        print("Example: python baseline_retrieval.py 'cardiologist in Chicago'")
+        print("\nThe index will be built automatically on first run if it doesn't exist.")
+        print("=" * 50)
