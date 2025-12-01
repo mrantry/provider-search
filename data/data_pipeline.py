@@ -6,18 +6,21 @@ Uses taxonomy_reference.csv for specialty lookups
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
 import urllib.request
 import zipfile
 import io
+import random
 
 class ProductionNPIProcessor:
-    """pipeline with state filtering and chunk processing"""
+    """Pipeline with state filtering, chunk processing, and appointment/rating features"""
     
-    def __init__(self, states=None, reference_location=(41.8781, -87.6298), taxonomy_file='data/processed/taxonomy_reference.csv', zip_centroids_file='data/processed/il_zip_centroids.csv'):
+    def __init__(self, states=None, reference_location=(41.8781, -87.6298), 
+                 taxonomy_file='data/processed/taxonomy_reference.csv', 
+                 zip_centroids_file='data/processed/il_zip_centroids.csv'):
         """
         Initialize processor
         
@@ -87,6 +90,17 @@ class ProductionNPIProcessor:
         self.COL_GENDER = 'Provider Sex Code'
         self.COL_ENTITY_TYPE = 'Entity Type Code'
         
+        # Insurance networks for synthetic data
+        self.insurance_networks = [
+            'Blue Cross Blue Shield',
+            'UnitedHealthcare',
+            'Aetna',
+            'Cigna',
+            'Humana',
+            'Medicare',
+            'Medicaid'
+        ]
+        
         # Load taxonomy reference
         self.load_taxonomy_reference(taxonomy_file)
     
@@ -131,6 +145,182 @@ class ProductionNPIProcessor:
                 row.get('Specialization', '')
             )
         return ('Other Healthcare Provider', '', '', '')
+    
+    def generate_rating_features(self, chunk):
+        """
+        Generate realistic rating and review features
+        
+        Features:
+        - average_rating: 1.0-5.0 stars (beta distribution, skewed high)
+        - num_reviews: Number of reviews (correlated with experience)
+        - has_rating: Boolean flag for whether provider has been rated
+        """
+        n = len(chunk)
+        
+        # Beta distribution for ratings (skewed towards 4.0-4.5)
+        alpha, beta = 8, 2
+        raw_ratings = np.random.beta(alpha, beta, n)
+        ratings = 1.0 + (raw_ratings * 4.0)
+        ratings = np.round(ratings, 1)
+        
+        # ~5% of providers have no ratings (new providers)
+        has_rating = np.random.random(n) > 0.05
+        
+        # Number of reviews (correlated with years of experience)
+        if 'years_experience' in chunk.columns:
+            base_reviews = chunk['years_experience'] * np.random.uniform(5, 20, n)
+            num_reviews = base_reviews.astype(int)
+        else:
+            num_reviews = np.random.randint(0, 200, n)
+        
+        # Apply has_rating mask
+        ratings[~has_rating] = np.nan
+        num_reviews[~has_rating] = 0
+        
+        chunk['average_rating'] = ratings
+        chunk['num_reviews'] = num_reviews
+        chunk['has_rating'] = has_rating
+        
+        return chunk
+    
+    def generate_appointment_features(self, chunk):
+        """
+        Generate realistic appointment availability features
+        
+        Features:
+        - wait_days: Days until soonest appointment
+        - soonest_appointment_date: Actual date of soonest appointment
+        - appointments_available_7days: Number of slots in next 7 days
+        - appointments_available_14days: Number of slots in next 14 days
+        - appointments_available_30days: Number of slots in next 30 days
+        - availability_score: 0-1 score (inverse of wait time)
+        
+        Logic:
+        - Higher-rated providers → longer wait times
+        - New providers (no rating) → shorter wait times
+        """
+        n = len(chunk)
+        today = datetime.now()
+        
+        def calculate_wait_days(rating, has_rating):
+            """Calculate wait days based on rating"""
+            if not has_rating or pd.isna(rating):
+                # New providers: 1-7 days
+                return random.randint(1, 7)
+            
+            if rating >= 4.5:
+                # Highly rated: 7-30 days
+                return random.randint(7, 30)
+            elif rating >= 4.0:
+                # Good rated: 3-14 days
+                return random.randint(3, 14)
+            elif rating >= 3.5:
+                # Average: 1-10 days
+                return random.randint(1, 10)
+            else:
+                # Lower rated: 1-5 days (more available)
+                return random.randint(1, 5)
+        
+        # Calculate wait days for each provider
+        wait_days = []
+        for _, row in chunk.iterrows():
+            rating = row.get('average_rating', np.nan)
+            has_rating = row.get('has_rating', False)
+            wait_days.append(calculate_wait_days(rating, has_rating))
+        
+        chunk['wait_days'] = wait_days
+        
+        # Calculate soonest appointment date
+        chunk['soonest_appointment_date'] = [
+            (today + timedelta(days=int(wd))).strftime('%Y-%m-%d')
+            for wd in wait_days
+        ]
+        
+        # Generate appointment slots for different time windows
+        def generate_slots(wait_days, window_days):
+            """Generate number of available slots in a time window"""
+            if wait_days >= window_days:
+                return 0
+            
+            available_days = window_days - wait_days
+            slots_per_day = random.uniform(2, 8)
+            capacity_factor = random.uniform(0.3, 0.8)
+            total_slots = int(available_days * slots_per_day * capacity_factor)
+            
+            return max(0, total_slots)
+        
+        chunk['appointments_available_7days'] = [
+            generate_slots(wd, 7) for wd in wait_days
+        ]
+        
+        chunk['appointments_available_14days'] = [
+            generate_slots(wd, 14) for wd in wait_days
+        ]
+        
+        chunk['appointments_available_30days'] = [
+            generate_slots(wd, 30) for wd in wait_days
+        ]
+        
+        # Calculate availability score (0-1, inverse of wait time)
+        max_wait = max(wait_days) if wait_days else 30
+        chunk['availability_score'] = [
+            1 - (wd / max_wait) for wd in wait_days
+        ]
+        
+        return chunk
+    
+    def generate_insurance_features(self, chunk):
+        """
+        Generate insurance network features
+        
+        Features:
+        - accepted_networks: List of accepted insurance networks
+        - network_breadth: Percentage of major networks accepted (0-1)
+        - in_network_bcbs: Boolean for Blue Cross Blue Shield
+        - in_network_uhc: Boolean for UnitedHealthcare
+        - accepts_medicare: Boolean for Medicare
+        - accepts_medicaid: Boolean for Medicaid
+        """
+        n = len(chunk)
+        
+        # Each provider accepts 2-6 networks randomly
+        accepted_networks = [
+            random.sample(self.insurance_networks, k=random.randint(2, 6))
+            for _ in range(n)
+        ]
+        
+        chunk['accepted_networks'] = [
+            ','.join(networks) for networks in accepted_networks
+        ]
+        
+        # Calculate network breadth
+        chunk['network_breadth'] = [
+            len(networks) / len(self.insurance_networks)
+            for networks in accepted_networks
+        ]
+        
+        # Create boolean flags for major insurers
+        chunk['in_network_bcbs'] = [
+            'Blue Cross Blue Shield' in networks
+            for networks in accepted_networks
+        ]
+        
+        chunk['in_network_uhc'] = [
+            'UnitedHealthcare' in networks
+            for networks in accepted_networks
+        ]
+        
+        chunk['accepts_medicare'] = [
+            'Medicare' in networks
+            for networks in accepted_networks
+        ]
+        
+        chunk['accepts_medicaid'] = [
+            'Medicaid' in networks
+            for networks in accepted_networks
+        ]
+        
+        return chunk
     
     def process_chunk(self, chunk):
         """Process a single chunk of data"""
@@ -207,11 +397,14 @@ class ProductionNPIProcessor:
         
         chunk['distance_miles'] = chunk['zip_5'].apply(calc_distance)
         
-        # Synthetic features (replace with real data when available)
+        # =====================================================================
+        # SYNTHETIC FEATURES
+        # =====================================================================
+        
+        # Telehealth (specialty-dependent)
         specialty_telehealth = {
             'Family Medicine': 0.7,
             'Internal Medicine': 0.7,
-            'Family Medicine': 0.7,
             'Psychiatry': 0.8,
             'Psychologist': 0.9,
             'Pediatrics': 0.6
@@ -227,7 +420,19 @@ class ProductionNPIProcessor:
         chunk['weekend_hours'] = np.random.random(len(chunk)) < 0.2
         chunk['accepting_new_patients'] = np.random.random(len(chunk)) < 0.7
         
-        # Create search text (includes specialty search text)
+        # Generate rating features (must come before appointment features)
+        chunk = self.generate_rating_features(chunk)
+        
+        # Generate appointment features (depends on ratings)
+        chunk = self.generate_appointment_features(chunk)
+        
+        # Generate insurance features
+        chunk = self.generate_insurance_features(chunk)
+        
+        # =====================================================================
+        # CREATE SEARCH TEXT
+        # =====================================================================
+        
         def build_text(row):
             parts = [
                 row['provider_name'],
@@ -250,6 +455,8 @@ class ProductionNPIProcessor:
                 features.append('Spanish')
             if row.get('evening_hours', False):
                 features.append('evening hours')
+            if row.get('accepts_medicare', False):
+                features.append('Medicare')
             
             if features:
                 parts.append(' '.join(features))
@@ -258,25 +465,60 @@ class ProductionNPIProcessor:
         
         chunk['search_text'] = chunk.apply(build_text, axis=1)
         
-        # Select final columns
+        # =====================================================================
+        # SELECT FINAL COLUMNS
+        # =====================================================================
+        
         final_cols = [
+            # Identity
             self.COL_NPI,
             'provider_name',
             'specialty_readable',
             'specialty_code',
+            
+            # Location
             'full_address',
             self.COL_CITY,
             self.COL_STATE,
             'zip_5',
             'distance_miles',
+            
+            # Experience
             'years_experience',
+            
+            # Rating & Reviews
+            'average_rating',
+            'num_reviews',
+            'has_rating',
+            
+            # Appointment Availability
+            'wait_days',
+            'soonest_appointment_date',
+            'appointments_available_7days',
+            'appointments_available_14days',
+            'appointments_available_30days',
+            'availability_score',
+            
+            # Insurance Networks
+            'accepted_networks',
+            'network_breadth',
+            'in_network_bcbs',
+            'in_network_uhc',
+            'accepts_medicare',
+            'accepts_medicaid',
+            
+            # Other Features
             'telehealth_available',
             'speaks_spanish',
             'speaks_chinese',
             'evening_hours',
             'weekend_hours',
             'accepting_new_patients',
+            
+            # Search
             'search_text',
+            
+            # Metadata
             self.COL_CREDENTIAL,
             self.COL_GENDER
         ]
@@ -407,8 +649,32 @@ class ProductionNPIProcessor:
             print(f"  Min: {exp_stats['min']:.0f} years")
             print(f"  Max: {exp_stats['max']:.0f} years")
         
+        # Rating statistics
+        if 'average_rating' in df.columns:
+            print(f"\nRating Distribution:")
+            rating_stats = df['average_rating'].describe()
+            print(f"  Mean: {rating_stats['mean']:.2f} stars")
+            print(f"  Median: {rating_stats['50%']:.2f} stars")
+            print(f"  Providers with ratings: {df['has_rating'].sum()} ({df['has_rating'].sum()/len(df)*100:.1f}%)")
+        
+        # Appointment availability statistics
+        if 'wait_days' in df.columns:
+            print(f"\nAppointment Availability:")
+            wait_stats = df['wait_days'].describe()
+            print(f"  Mean wait time: {wait_stats['mean']:.1f} days")
+            print(f"  Median wait time: {wait_stats['50%']:.1f} days")
+            print(f"  Available within 7 days: {(df['appointments_available_7days'] > 0).sum()} ({(df['appointments_available_7days'] > 0).sum()/len(df)*100:.1f}%)")
+        
+        # Insurance network statistics
+        if 'network_breadth' in df.columns:
+            print(f"\nInsurance Network Coverage:")
+            print(f"  Average networks accepted: {df['network_breadth'].mean()*7:.1f} / 7")
+            print(f"  Accepts BCBS: {df['in_network_bcbs'].sum()} ({df['in_network_bcbs'].sum()/len(df)*100:.1f}%)")
+            print(f"  Accepts Medicare: {df['accepts_medicare'].sum()} ({df['accepts_medicare'].sum()/len(df)*100:.1f}%)")
+        
         print(f"\nFeature Coverage (from sample):")
-        feature_cols = ['telehealth_available', 'speaks_spanish', 'evening_hours', 'weekend_hours']
+        feature_cols = ['telehealth_available', 'speaks_spanish', 'evening_hours', 'weekend_hours', 
+                       'accepting_new_patients']
         for col in feature_cols:
             if col in df.columns:
                 pct = df[col].sum() / len(df) * 100
@@ -481,7 +747,12 @@ def main():
     print()
     
     # Create processor
-    processor = ProductionNPIProcessor(states=STATES, taxonomy_file=TAXONOMY_FILE)
+    processor = ProductionNPIProcessor(
+        states=STATES, 
+        reference_location=REFERENCE_LOCATION,
+        taxonomy_file=TAXONOMY_FILE,
+        zip_centroids_file=ZIP_CENTROIDS_FILE
+    )
     
     # Run pipeline
     start_time = datetime.now()
