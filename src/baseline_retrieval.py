@@ -1,11 +1,30 @@
 # baseline_retrieval.py
 
-from pyserini.search import lucene
-from pyserini.index.lucene import LuceneIndexer
-import json
 import os
 import sys
 from pathlib import Path
+import glob
+
+# Configure Java classpath before importing pyserini
+import jnius_config
+if not jnius_config.vm_running:
+    # Look for pyserini jar in common locations
+    possible_paths = [
+        Path(__file__).parent.parent / "provider-search" / "lib" / "python3.13" / "site-packages" / "pyserini" / "resources" / "jars",
+        Path.home() / ".local" / "lib" / "python3.13" / "site-packages" / "pyserini" / "resources" / "jars",
+        Path("/opt/anaconda3/lib/python3.13/site-packages/pyserini/resources/jars"),
+    ]
+
+    for jar_dir in possible_paths:
+        if jar_dir.exists():
+            jar_files = list(jar_dir.glob("anserini-*.jar"))
+            if jar_files:
+                jnius_config.add_classpath(str(jar_files[0]))
+                break
+
+from pyserini.search import lucene
+from pyserini.index.lucene import LuceneIndexer
+import json
 
 
 class ProviderSearchEngine:

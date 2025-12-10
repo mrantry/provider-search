@@ -1,0 +1,35 @@
+{
+  "name": "Fatima - Community-Oriented Patient",
+  "description": "Prioritizes shared values and demographic alignment",
+  "priority_order": ["religious", "demographic", "quality", "convenience", "cost"],
+  "feature_weights": {
+    "religious": {
+      "placeholder": 0.0,
+      "note": "In practice, this might use provider name matching, network affiliation with religious hospitals, or other proxies"
+    },
+    "demographic": {
+      "speaks_spanish": 0.15,
+      "speaks_chinese": 0.15,
+      "cultural_sensitivity_proxy": 0.20,
+      "note": "Language is a strong signal for cultural compatibility"
+    },
+    "quality": {
+      "average_rating": 0.15,
+      "num_reviews": 0.05,
+      "years_experience": 0.10,
+      "has_rating": 0.05
+    },
+    "convenience": {
+      "distance_miles": -0.08,
+      "availability_score": 0.05,
+      "wait_days": -0.03,
+      "telehealth_available": 0.02
+    },
+    "cost": {
+      "network_breadth": 0.03,
+      "in_network_bcbs": 0.02,
+      "in_network_uhc": 0.02
+    }
+  },
+  "notes": "Fatima values cultural and religious alignment. Language support and demographic matching are critical. Willing to travel further and pay more for the right fit."
+}

@@ -1,0 +1,34 @@
+{
+  "name": "Marcus - Budget-Conscious Parent",
+  "description": "Prioritizes cost and quality, willing to sacrifice convenience",
+  "priority_order": ["cost", "quality", "convenience", "demographic", "religious"],
+  "feature_weights": {
+    "cost": {
+      "network_breadth": 0.30,
+      "in_network_bcbs": 0.15,
+      "in_network_uhc": 0.15,
+      "accepts_medicare": 0.10,
+      "accepts_medicaid": 0.10
+    },
+    "quality": {
+      "average_rating": 0.20,
+      "num_reviews": 0.05,
+      "years_experience": 0.10,
+      "has_rating": 0.05
+    },
+    "convenience": {
+      "distance_miles": -0.05,
+      "availability_score": 0.08,
+      "wait_days": -0.03,
+      "telehealth_available": 0.04
+    },
+    "demographic": {
+      "speaks_spanish": 0.02,
+      "speaks_chinese": 0.02
+    },
+    "religious": {
+      "placeholder": 0.0
+    }
+  },
+  "notes": "Marcus needs affordability. High weights on insurance coverage and network breadth. Less concerned about distance or wait times."
+}
