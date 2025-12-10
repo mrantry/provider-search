@@ -526,7 +526,7 @@ Valid persona IDs are: `sarah`, `marcus`, `fatima`, `robert`, `jennifer` (case-s
 
 ## Team
 
-**UIUC CS410 - Information Retrieval**
+**UIUC CS410 - Text Information Systems**
 
 - **Michael Antry** - Service architecture, API integration
 - **Dean Fletcher** - Data Engineering and Processing, Data Collection
