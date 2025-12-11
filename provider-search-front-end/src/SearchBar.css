@@ -1,0 +1,25 @@
+.search {
+  position: relative;
+  border-radius: 25px;
+  background-color: rgba(0, 0, 0, 0.1);
+  transition: background-color 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.search:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.search-icon {
+  color:#2f95cb;
+  padding: 0 16px;
+  position: absolute;
+  display: flex;
+}
+
+.search-input {
+  color: white;
+  width: 100%;
+  padding: 8px 8px 8px 48px;
+}
