@@ -1,4 +1,4 @@
 pyserini>=0.22.0
 flask>=2.3.0
 flasgger>=0.9.7
-
+flask-cors>=4.0.0

@@ -22,11 +22,13 @@ if not jnius_config.vm_running:
 sys.path.insert(0, str(Path(__file__).parent))
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from flasgger import Swagger
 from baseline_retrieval import ProviderSearchEngine, ensure_index_exists
 from reranker import PersonaReranker, load_provider_data
 
 app = Flask(__name__)
+CORS(app)
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
