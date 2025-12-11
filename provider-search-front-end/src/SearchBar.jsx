@@ -38,7 +38,7 @@ function SearchBar({ onSearch }) {
         </div>
         <InputBase
           className="search-text"
-          placeholder="Search providers, specialties, or locations"
+          placeholder="Search..."
           sx={{ color: "white" }}
           value={query}
           onChange={handleChange}

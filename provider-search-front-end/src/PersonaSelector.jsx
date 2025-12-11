@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
 import CircularProgress from "@mui/material/CircularProgress";
 import { getPersonas } from "./provider-search-controller";
 import "./PersonaSelector.css";
@@ -35,7 +34,7 @@ function PersonaSelector({ value, onPersonaChange }) {
     };
 
     fetchPersonas();
-  }, [onPersonaChange]);
+  }, []);
 
   useEffect(() => {
     if (value !== undefined && value !== selectedPersona) {
@@ -50,18 +49,30 @@ function PersonaSelector({ value, onPersonaChange }) {
   };
 
   const selectStyles = {
-    minWidth: 180,
-    ".MuiInputLabel-root": { color: "#cde4ff" },
-    ".MuiInputLabel-root.Mui-focused": { color: "#90c6ff" },
+    minWidth: 200,
     ".MuiOutlinedInput-root": {
-      backgroundColor: "rgba(255, 255, 255, 0.08)",
-      borderRadius: "12px",
+      height: 48,
+      background: "rgba(255, 255, 255, 0.06)",
+      borderRadius: "14px",
       color: "#f7f8fb",
-      "& fieldset": { borderColor: "rgba(255, 255, 255, 0.28)" },
-      "&:hover fieldset": { borderColor: "#5ab0ff" },
-      "&.Mui-focused fieldset": { borderColor: "#5ab0ff", boxShadow: "0 0 0 3px rgba(90, 176, 255, 0.25)" },
+      paddingRight: "6px",
+      "& fieldset": { borderColor: "rgba(255, 255, 255, 0.12)" },
+      "&:hover fieldset": { borderColor: "rgba(255, 255, 255, 0.2)" },
+      "&.Mui-focused fieldset": { borderColor: "#6fc1ff", boxShadow: "0 0 0 3px rgba(111, 193, 255, 0.2)" },
+      ".MuiOutlinedInput-notchedOutline": { borderRadius: "14px" },
+      ".MuiSelect-select": {
+        display: "flex",
+        alignItems: "center",
+        height: "48px",
+        padding: "0 14px",
+        fontWeight: 600,
+        letterSpacing: "0.01em",
+      },
+      ".MuiSelect-select.MuiInputBase-input": {
+        paddingRight: "26px",
+      },
     },
-    ".MuiSelect-icon": { color: "#e2eeff" },
+    ".MuiSelect-icon": { color: "#dbe9f8", fontSize: "1.15rem" },
   };
 
   if (loading) {
@@ -82,15 +93,43 @@ function PersonaSelector({ value, onPersonaChange }) {
 
   return (
     <FormControl className="persona-selector" size="small">
-      <InputLabel id="persona-select-label">Persona</InputLabel>
       <Select
-        labelId="persona-select-label"
         id="persona-select"
         value={selectedPersona}
-        label="Persona"
+        displayEmpty
+        renderValue={(val) => {
+          const persona = personas.find((p) => p.id === val);
+          if (persona) {
+            return <span className="persona-value">{persona.name}</span>;
+          }
+          return <span className="persona-placeholder">Persona</span>;
+        }}
         onChange={handleChange}
         sx={selectStyles}
+        inputProps={{ "aria-label": "Persona" }}
+        MenuProps={{
+          PaperProps: {
+            sx: {
+              background: "rgba(14, 22, 35, 0.96)",
+              color: "#e8f0fa",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              borderRadius: "12px",
+              boxShadow: "0 18px 38px rgba(0, 0, 0, 0.55)",
+              "& .MuiMenuItem-root.Mui-selected": {
+                backgroundColor: "rgba(79, 139, 255, 0.18)",
+              },
+              "& .MuiMenuItem-root:hover": {
+                backgroundColor: "rgba(111, 193, 255, 0.14)",
+              },
+            },
+          },
+        }}
       >
+        {!selectedPersona && (
+          <MenuItem disabled value="">
+            Persona
+          </MenuItem>
+        )}
         {personas.map((persona) => (
           <MenuItem key={persona.id} value={persona.id}>
             {persona.name}
