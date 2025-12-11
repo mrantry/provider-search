@@ -1,0 +1,36 @@
+{
+  "name": "Sarah - Busy Professional",
+  "description": "Prioritizes convenience and quality over cost",
+  "priority_order": ["convenience", "quality", "cost", "demographic", "religious"],
+  "feature_weights": {
+    "convenience": {
+      "distance_miles": -0.30,
+      "availability_score": 0.25,
+      "wait_days": -0.15,
+      "appointments_available_7days": 0.10,
+      "evening_hours": 0.08,
+      "weekend_hours": 0.08,
+      "telehealth_available": 0.04
+    },
+    "quality": {
+      "average_rating": 0.25,
+      "num_reviews": 0.08,
+      "years_experience": 0.12,
+      "has_rating": 0.05
+    },
+    "cost": {
+      "network_breadth": 0.05,
+      "in_network_bcbs": 0.03,
+      "in_network_uhc": 0.03,
+      "accepts_medicare": 0.02
+    },
+    "demographic": {
+      "speaks_spanish": 0.01,
+      "speaks_chinese": 0.01
+    },
+    "religious": {
+      "placeholder": 0.0
+    }
+  },
+  "notes": "Sarah values time efficiency. Negative weights for distance and wait time mean closer/faster is better. Evening/weekend hours are important for her busy schedule."
+}

@@ -1,0 +1,300 @@
+swagger: "2.0"
+info:
+  title: Provider Search API
+  description: |
+    Persona-based healthcare provider search API with intelligent re-ranking.
+
+    ## Features
+    - Full-text search using BM25 and Query Likelihood algorithms
+    - Persona-based re-ranking that personalizes results
+    - 5 distinct personas with different value priorities
+    - 303K+ healthcare providers in Illinois
+
+    ## How It Works
+    1. **Baseline Search**: Uses BM25 or QL to find text-relevant providers
+    2. **Feature Extraction**: Extracts convenience, quality, cost, and demographic features
+    3. **Persona Re-ranking**: Applies persona-specific weights to personalize results
+
+    ## Available Personas
+    - **Sarah** (Busy Professional): Convenience → Quality → Cost
+    - **Marcus** (Budget-Conscious): Cost → Quality → Convenience
+    - **Fatima** (Community-Oriented): Cultural/Religious → Demographic → Quality
+    - **Robert** (Quality-First): Quality → Everything else
+    - **Jennifer** (Balanced): Balanced approach
+
+    ## Try It Out
+    1. Go to `GET /personas` to see available personas
+    2. Use `POST /search` to search with persona re-ranking
+    3. Adjust the `alpha` parameter to balance text relevance vs persona preferences
+  version: 1.0.0
+  contact:
+    name: CS410 Team - Provider Search
+    email: support@example.com
+
+host: localhost:5001
+basePath: /
+schemes:
+  - http
+
+consumes:
+  - application/json
+produces:
+  - application/json
+
+tags:
+  - name: System
+    description: System health and info
+  - name: Personas
+    description: Persona management endpoints
+  - name: Search
+    description: Provider search endpoints
+
+paths:
+  /:
+    get:
+      tags:
+        - System
+      summary: API information
+      description: Get basic information about the API and available endpoints
+      responses:
+        200:
+          description: API information
+          schema:
+            type: object
+            properties:
+              service:
+                type: string
+              version:
+                type: string
+              endpoints:
+                type: object
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      description: Check if the API services are running properly
+      responses:
+        200:
+          description: Service health status
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: healthy
+              search_engine:
+                type: boolean
+              reranker:
+                type: boolean
+              personas_available:
+                type: integer
+
+  /personas:
+    get:
+      tags:
+        - Personas
+      summary: List all personas
+      description: Get a list of all available personas with their details
+      responses:
+        200:
+          description: List of personas
+          schema:
+            type: object
+            properties:
+              personas:
+                type: array
+                items:
+                  $ref: '#/definitions/Persona'
+              count:
+                type: integer
+
+  /personas/{persona_id}:
+    get:
+      tags:
+        - Personas
+      summary: Get persona details
+      description: Get detailed information about a specific persona
+      parameters:
+        - name: persona_id
+          in: path
+          required: true
+          type: string
+          enum: [sarah, marcus, fatima, robert, jennifer]
+          description: ID of the persona
+      responses:
+        200:
+          description: Persona details
+          schema:
+            $ref: '#/definitions/Persona'
+        404:
+          description: Persona not found
+          schema:
+            $ref: '#/definitions/Error'
+
+  /search:
+    post:
+      tags:
+        - Search
+      summary: Search providers with persona re-ranking
+      description: |
+        Search for healthcare providers using text relevance and optional persona-based re-ranking.
+
+        **How to use:**
+        1. Provide a query (e.g., "cardiologist in Chicago")
+        2. Optionally select a persona to personalize results
+        3. Adjust alpha to control text relevance vs persona preference balance
+
+        **Alpha parameter:**
+        - 1.0 = Pure text relevance (ignores persona)
+        - 0.5 = Equal weight to text and persona (default)
+        - 0.0 = Pure persona preference (ignores text relevance)
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/SearchRequest'
+      responses:
+        200:
+          description: Search results
+          schema:
+            $ref: '#/definitions/SearchResponse'
+        400:
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/Error'
+        500:
+          description: Server error
+          schema:
+            $ref: '#/definitions/Error'
+
+definitions:
+  Persona:
+    type: object
+    properties:
+      id:
+        type: string
+        description: Unique identifier for the persona
+        example: sarah
+      name:
+        type: string
+        description: Display name of the persona
+        example: Sarah - Busy Professional
+      description:
+        type: string
+        description: Description of the persona's priorities
+        example: Prioritizes convenience and quality over cost
+      priority_order:
+        type: array
+        items:
+          type: string
+        description: Ordered list of value priorities
+        example: [convenience, quality, cost, demographic, religious]
+
+  SearchRequest:
+    type: object
+    required:
+      - query
+    properties:
+      query:
+        type: string
+        description: Search query string
+        example: "cardiologist in Chicago"
+      persona:
+        type: string
+        description: Persona ID for re-ranking (optional)
+        enum: [sarah, marcus, fatima, robert, jennifer]
+        example: sarah
+      method:
+        type: string
+        description: Search algorithm to use
+        enum: [bm25, ql_dirichlet]
+        default: bm25
+      k:
+        type: integer
+        description: Number of results to return (1-100)
+        minimum: 1
+        maximum: 100
+        default: 20
+      alpha:
+        type: number
+        description: Weight for baseline score (0-1). Higher = more text relevance
+        minimum: 0
+        maximum: 1
+        default: 0.5
+      include_features:
+        type: boolean
+        description: Include detailed feature scores in response
+        default: false
+
+  SearchResponse:
+    type: object
+    properties:
+      query:
+        type: string
+        description: The search query
+      method:
+        type: string
+        description: Search method used
+        enum: [bm25, ql_dirichlet]
+      persona:
+        type: string
+        description: Persona used for re-ranking
+      alpha:
+        type: number
+        description: Alpha value used
+      num_results:
+        type: integer
+        description: Number of results returned
+      results:
+        type: array
+        items:
+          $ref: '#/definitions/ProviderResult'
+
+  ProviderResult:
+    type: object
+    properties:
+      rank:
+        type: integer
+        description: Result rank (1-indexed)
+      provider_id:
+        type: string
+        description: Provider NPI identifier
+      provider_name:
+        type: string
+        description: Provider name
+      specialty:
+        type: string
+        description: Provider specialty
+      combined_score:
+        type: number
+        description: Final combined score
+      baseline_score:
+        type: number
+        description: Text relevance score
+      persona_score:
+        type: number
+        description: Persona-weighted feature score
+      normalized_baseline:
+        type: number
+        description: Normalized baseline score (0-1)
+      provider_data:
+        type: object
+        description: Full provider record
+      features:
+        type: object
+        description: Feature scores (if include_features=true)
+
+  Error:
+    type: object
+    properties:
+      error:
+        type: string
+        description: Error message
+      available_personas:
+        type: array
+        items:
+          type: string
+        description: List of valid personas (for validation errors)

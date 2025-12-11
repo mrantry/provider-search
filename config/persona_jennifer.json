@@ -1,0 +1,36 @@
+{
+  "name": "Jennifer - Balanced Seeker",
+  "description": "Takes a balanced approach across all dimensions",
+  "priority_order": ["quality", "convenience", "cost", "demographic", "religious"],
+  "feature_weights": {
+    "quality": {
+      "average_rating": 0.20,
+      "num_reviews": 0.08,
+      "years_experience": 0.12,
+      "has_rating": 0.05
+    },
+    "convenience": {
+      "distance_miles": -0.12,
+      "availability_score": 0.10,
+      "wait_days": -0.08,
+      "appointments_available_7days": 0.05,
+      "evening_hours": 0.04,
+      "weekend_hours": 0.04,
+      "telehealth_available": 0.03
+    },
+    "cost": {
+      "network_breadth": 0.08,
+      "in_network_bcbs": 0.05,
+      "in_network_uhc": 0.05,
+      "accepts_medicare": 0.03
+    },
+    "demographic": {
+      "speaks_spanish": 0.02,
+      "speaks_chinese": 0.02
+    },
+    "religious": {
+      "placeholder": 0.0
+    }
+  },
+  "notes": "Jennifer considers all factors but doesn't have extreme preferences. Moderate weights across quality, convenience, and cost create balanced results."
+}

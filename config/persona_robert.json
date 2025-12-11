@@ -1,0 +1,30 @@
+{
+  "name": "Robert - Quality-First Patient",
+  "description": "Prioritizes quality above all else, managing chronic condition",
+  "priority_order": ["quality", "demographic", "convenience", "cost", "religious"],
+  "feature_weights": {
+    "quality": {
+      "average_rating": 0.35,
+      "num_reviews": 0.15,
+      "years_experience": 0.25,
+      "has_rating": 0.10
+    },
+    "demographic": {
+      "age_proxy_experience": 0.05,
+      "note": "Preference for providers with similar life experience (age/career stage)"
+    },
+    "convenience": {
+      "distance_miles": -0.02,
+      "availability_score": 0.03,
+      "telehealth_available": 0.03
+    },
+    "cost": {
+      "network_breadth": 0.01,
+      "in_network_bcbs": 0.01
+    },
+    "religious": {
+      "placeholder": 0.0
+    }
+  },
+  "notes": "Robert wants the absolute best care. Quality metrics dominate with very high weights. Cost and convenience are nearly irrelevant."
+}
