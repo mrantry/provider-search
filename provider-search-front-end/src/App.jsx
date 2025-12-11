@@ -4,32 +4,120 @@ import './App.css'
 import SearchBar from './SearchBar'
 
 function App() {
-  const [results, setResults] = useState(null);
+  const [results, setResults] = useState([]);
+  const [status, setStatus] = useState('idle'); // idle | loading | success | error
+  const [error, setError] = useState(null);
+  const [lastQuery, setLastQuery] = useState('');
+  const [lastPersona, setLastPersona] = useState('');
 
-  const handleSearch = async (query) => {
-    console.log("Making API request for:", query);
+  const handleSearch = async (query, persona) => {
+    console.log("Making API request for:", query, "with persona:", persona);
+
+    setStatus('loading');
+    setError(null);
+    setResults([]);
+    setLastQuery(query);
+    setLastPersona(persona);
 
     try {
       const response = await fetch(
-        `https://api.example.com/search?q=${encodeURIComponent(query)}`
+        'http://localhost:5001/search',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, persona })
+        }
       );
 
       if (!response.ok) throw new Error(`Request failed: ${response.status}`);
 
       const data = await response.json();
-      setResults(data);
-      console.log("API results:", data);
+      const parsedResults = Array.isArray(data.results) ? data.results : [];
+      setResults(parsedResults);
+      setStatus('success');
+      console.log("API results:", parsedResults);
 
     } catch (error) {
       console.error("API error:", error);
+      setError('Unable to fetch results right now. Please try again.');
+      setStatus('error');
     }
+  };
+
+  const renderResults = () => {
+    if (status === 'idle') {
+      return <p className="muted">Start by searching for a provider.</p>;
+    }
+
+    if (status === 'loading') {
+      return <p className="muted">Searching…</p>;
+    }
+
+    if (status === 'error') {
+      return <p className="error">{error}</p>;
+    }
+
+    if (results.length === 0) {
+      return <p className="muted">No providers found. Try a different search or persona.</p>;
+    }
+
+    return (
+      <div className="results-grid">
+        {results.map((result) => {
+          const providerData = result.provider_data || {};
+          const name = result.provider_name || providerData.provider_name || 'Unknown provider';
+          const specialty = result.specialty || providerData.specialty_readable || 'Specialty not listed';
+          const city = providerData['Provider Business Practice Location Address City Name'] || providerData.city;
+          const state = providerData['Provider Business Practice Location Address State Name'] || providerData.state;
+          const location = providerData.full_address || [city, state].filter(Boolean).join(', ');
+          const rating = providerData.average_rating;
+          const reviews = providerData.num_reviews;
+          const accepting = providerData.accepting_new_patients;
+          const telehealth = providerData.telehealth_available;
+
+          return (
+            <article key={`${result.provider_id || name}-${result.rank}`} className="result-card">
+              <div className="result-top">
+                <h3>{name}</h3>
+                {location && <p className="result-location">{location}</p>}
+              </div>
+              <p className="result-specialty">{specialty}</p>
+              <div className="result-meta">
+                {typeof rating === 'number' && (
+                  <span className="pill">
+                    Rating {Number(rating).toFixed(1)}{reviews ? ` (${reviews})` : ''}
+                  </span>
+                )}
+                {accepting && <span className="pill success">Accepting new patients</span>}
+                {telehealth && <span className="pill">Telehealth</span>}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
     <>
-      <h1>Provider Search</h1>
-      <SearchBar onSearch={handleSearch} />
-      <p className="description">Search powered by what matters to you</p>
+      <header className="hero">
+        <h1>Provider Search</h1>
+        <p className="description">Search powered by what matters to you</p>
+        <SearchBar onSearch={handleSearch} />
+      </header>
+
+      <section className="results-section">
+        <div className="results-header">
+          <h2>Results</h2>
+          {lastQuery && status === 'success' && (
+            <p className="muted">
+              Showing matches for "{lastQuery}"
+              {lastPersona ? ` | Persona: ${lastPersona}` : ''}
+            </p>
+          )}
+        </div>
+        {renderResults()}
+      </section>
     </>
   );
 }

@@ -1,0 +1,17 @@
+.persona-selector {
+  min-width: 190px;
+  flex-shrink: 0;
+}
+
+.persona-selector.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f44336;
+  font-size: 14px;
+  padding: 8px;
+}
+
+.persona-selector.error p {
+  margin: 0;
+}
